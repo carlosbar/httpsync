@@ -20,8 +20,8 @@
 
 package com.locus.httpsync;
 
-import com.locus.httpSync.R;
 import com.locus.httpsync.Httpd;
+import com.locus.httpsync.R;
 
 import android.app.Activity;
 import android.content.Context;
