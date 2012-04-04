@@ -27,7 +27,7 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-import com.locus.httpSync.R;
+import com.locus.httpsync.R;
 
 import android.app.Service;
 import android.content.Intent;
