@@ -21,7 +21,9 @@
 package com.locus.httpsync;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
@@ -30,9 +32,12 @@ import java.net.Socket;
 import com.locus.httpsync.R;
 
 import android.app.Service;
+import android.content.ContentUris;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
@@ -60,10 +65,11 @@ public class Httpd extends Service {
 
 	/* http constants */
 	
-	private final		String						r200 = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n";
-	private final		String						r400 = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Type: text/html\r\n";
-	private final		String						r404 = "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Type: text/html\r\n";
-	private final		String						endHeaders = "\r\n";
+	private final		String						r200 		= "HTTP/1.0 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n";
+	private final		String						r200jpg		= "HTTP/1.0 200 OK\r\nConnection: close\r\nContent-Type: image/jpeg\r\n";
+	private final		String						r400 		= "HTTP/1.0 400 Bad Request\r\nConnection: close\r\nContent-Type: text/html\r\n";
+	private final		String						r404 		= "HTTP/1.0 404 Not Found\r\nConnection: close\r\nContent-Type: text/html\r\n";
+	private final		String						endHeaders	= "\r\n";
 	
 	/**
 	 * Class for clients to access. Because we know this service always runs in
@@ -135,6 +141,24 @@ public class Httpd extends Service {
 		}
 	}
 	
+	private void sendBuffer(OutputStream out,byte[] b)
+	{
+		try {
+			out.write(b);
+		} catch(Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	private void sendBuffer(OutputStream out,String str)
+	{
+		try {
+			sendBuffer(out,str.getBytes());
+		} catch(Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
 	private class ServerThread implements Runnable {
         public void run() {
            	while (!exiting) {
@@ -143,70 +167,102 @@ public class Httpd extends Service {
         			Socket client = serverSocket.accept();
         			sendMsg(msgType.status,"received connection ip: " + client.getInetAddress().getHostAddress());
         			BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
-        			BufferedWriter out = new BufferedWriter(new OutputStreamWriter(client.getOutputStream())); 
+        			OutputStream out = client.getOutputStream(); 
         			String line = null;
         			while ((line = in.readLine()) != null) {
         				if(line.startsWith("GET ")) {
         					/* verify get line */
         					String getLine[]=line.split(" ");
         					if(getLine.length < 3) {
-        						out.write(r400 + endHeaders + getString(R.string.httpBadRequest));
+        						sendBuffer(out,r400 + endHeaders + getString(R.string.httpBadRequest));
            						out.flush();
         						break;
         					}
         					/* verify uri */
         					String uri[]=getLine[1].split("[?]");
         					if(uri.length < 1) {
-        						out.write(r400 + endHeaders + getString(R.string.httpBadRequest));
+        						sendBuffer(out,r400 + endHeaders + getString(R.string.httpBadRequest));
            						out.flush();
         						break;
         					}
         					/* handle uri */
         					if(uri[0].equals("/")) {	/* home page */
-        						
-        						out.write(r200 + endHeaders + getString(R.string.app_name) + Httpd.this.getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
-        						
+        						sendBuffer(out,r200 + endHeaders + getString(R.string.app_name) + Httpd.this.getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+        					} else if(uri[0].startsWith("/cimg/")) {	/* image from contact */
+        						byte[] 		img=null;
+        						int 		photoId = Integer.parseInt(uri[0].split("/")[2].split("[.]")[0]);
+        					    Uri 		imguri = ContentUris.withAppendedId(ContactsContract.Data.CONTENT_URI, photoId);
+        					    Cursor		c = getContentResolver().query(imguri, new String[] {ContactsContract.CommonDataKinds.Photo.PHOTO}, null, null, null);
+        					    
+        					    try {
+        				            if (c.moveToFirst()) img = c.getBlob(c.getColumnIndex(ContactsContract.CommonDataKinds.Photo.PHOTO));
+        					    } catch(Exception e) {
+        					    	img = null;
+        					    }
+
+        					    if(img != null) {
+        					    	sendBuffer(out,r200jpg);
+        					    	sendBuffer(out,"Content-Disposition: inline; " + photoId + ".png\r\n");
+        					    	sendBuffer(out,"Content-Length: " + img.length + "\r\n" + endHeaders);
+        					    	sendBuffer(out,img);
+        					    } else {
+            						sendBuffer(out,r404 + endHeaders + getString(R.string.httpNotFound));
+               						out.flush();
+        					    }
         					} else if(uri[0].equals("/contacts")) {	/* contacts */
-        						String[] projection = new String[] {ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,ContactsContract.CommonDataKinds.Phone.NUMBER};
-        						Cursor cursor = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, projection, null, null, null);
+        						String[] projection = new String[] {ContactsContract.Data.RAW_CONTACT_ID,ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,ContactsContract.CommonDataKinds.Phone.NUMBER,ContactsContract.Contacts.PHOTO_ID};
+        						Cursor cursor = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, projection, null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC;");
+        						//int indexID = cursor.getColumnIndex(ContactsContract.Data.RAW_CONTACT_ID);
         						int indexName = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
         						int indexNumber = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
+        						int indexPhotoId = cursor.getColumnIndex(ContactsContract.Contacts.PHOTO_ID);
         						String lastName = "";
-        						out.write(r200 + endHeaders);
-        						
+        						sendBuffer(out,r200 + endHeaders);
         						cursor.moveToFirst();
+    							/* get contacts html file */
+    							InputStream f = getAssets().open("contacts.html");
+    							if(f != null) {
+    								byte[]	b = new byte[512];
+    								int		sz=0;
+    								
+    								do {
+    									sz=f.read(b);
+    									if(sz > 0) sendBuffer(out,b);
+    								} while(sz >= 0);
+    								f.close();
+    							}
+    							/* write records count */
+        						sendBuffer(out,"<div>"+ cursor.getCount() + " records</div></br>");
         						if(!cursor.isAfterLast()) {
-        							out.write("<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n");
-        							out.write("<html lang=\"en-US\" xml:lang=\"en-US\" xmlns=\"http://www.w3.org/1999/xhtml\">\n");
-        							out.write("<head>\n");
-        							out.write("<title>Contacts</title>\n");
-        							out.write("<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/>\n");
-        							out.write("</head>\n");
-        							out.write("</body>\n");
-    								out.write("<ul>");
-        							do {
+        							/* now insert all contact names */
+    								sendBuffer(out,"<ul>");
+          							do {
         								if(lastName.equals(cursor.getString(indexName))) {
-            								out.write(" [" + cursor.getString(indexNumber) + "]");
+            								sendBuffer(out," [" + cursor.getString(indexNumber) + "]");
         								} else {
         									lastName = cursor.getString(indexName);
-        									out.write("<li>" + lastName + " [" + cursor.getString(indexNumber)+ "]");
+        									int id = cursor.getInt(indexPhotoId); 
+        									if(id > 0) {
+        										sendBuffer(out,"<li><img align=\"middle\" src=\"/cimg/" + id + ".jpg\"/> "  + lastName + " [" + cursor.getString(indexNumber)+ "]");
+        									} else {
+        										sendBuffer(out,"<li>" + lastName + " [" + cursor.getString(indexNumber)+ "]");
+        									}
         								}
         							} while(cursor.moveToNext());
-    								out.write("</ul>");
-        							out.write("</body>\n");
-        							out.write("</html>\n");
+          							/* end html file */
+    								sendBuffer(out,"</ul>");
+        							sendBuffer(out,"</body>\n");
+        							sendBuffer(out,"</html>\n");
         						}
         						cursor.close();
-           						out.flush();
         					} else {
-        						out.write(r404 + endHeaders + getString(R.string.httpNotFound));
-           						out.flush();
+        						sendBuffer(out,r404 + endHeaders + getString(R.string.httpNotFound));
         					}
-       						out.flush();
         					break;
         				}
         			}
         			sendMsg(msgType.status,"closed connection to ip: " + client.getInetAddress().getHostAddress());
+        			client.shutdownOutput();
     		        client.close();
         		} catch (Exception e) {
         			sendMsg(msgType.status,"Connection interrupted");
