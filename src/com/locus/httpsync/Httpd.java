@@ -32,13 +32,19 @@ import com.locus.httpsync.R;
 import android.app.Service;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
+import android.provider.Contacts;
+import android.provider.ContactsContract;
+import android.provider.ContactsContract.RawContacts;
 import android.util.Log;
 import android.widget.Toast;
+
 
 public class Httpd extends Service {
 	public static final	String						PREFS_DB = "com.locus.httpSync.db";
@@ -52,6 +58,13 @@ public class Httpd extends Service {
 	private final		IBinder						mBinder = new LocalBinder();
 	private final		Handler						handler = new Handler();
 
+	/* http constants */
+	
+	private final		String						r200 = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n";
+	private final		String						r400 = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Type: text/html\r\n";
+	private final		String						r404 = "HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Type: text/html\r\n";
+	private final		String						endHeaders = "\r\n";
+	
 	/**
 	 * Class for clients to access. Because we know this service always runs in
 	 * the same process as its clients, we don't need to deal with IPC.
@@ -133,8 +146,62 @@ public class Httpd extends Service {
         			BufferedWriter out = new BufferedWriter(new OutputStreamWriter(client.getOutputStream())); 
         			String line = null;
         			while ((line = in.readLine()) != null) {
-        				if(line.startsWith("GET")) {
-    						out.write("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n\r\n" + getString(R.string.app_name) + Httpd.this.getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+        				if(line.startsWith("GET ")) {
+        					/* verify get line */
+        					String getLine[]=line.split(" ");
+        					if(getLine.length < 3) {
+        						out.write(r400 + endHeaders + getString(R.string.httpBadRequest));
+           						out.flush();
+        						break;
+        					}
+        					/* verify uri */
+        					String uri[]=getLine[1].split("[?]");
+        					if(uri.length < 1) {
+        						out.write(r400 + endHeaders + getString(R.string.httpBadRequest));
+           						out.flush();
+        						break;
+        					}
+        					/* handle uri */
+        					if(uri[0].equals("/")) {	/* home page */
+        						
+        						out.write(r200 + endHeaders + getString(R.string.app_name) + Httpd.this.getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+        						
+        					} else if(uri[0].equals("/contacts")) {	/* contacts */
+        						String[] projection = new String[] {ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,ContactsContract.CommonDataKinds.Phone.NUMBER};
+        						Cursor cursor = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, projection, null, null, null);
+        						int indexName = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
+        						int indexNumber = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
+        						String lastName = "";
+        						out.write(r200 + endHeaders);
+        						
+        						cursor.moveToFirst();
+        						if(!cursor.isAfterLast()) {
+        							out.write("<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n");
+        							out.write("<html lang=\"en-US\" xml:lang=\"en-US\" xmlns=\"http://www.w3.org/1999/xhtml\">\n");
+        							out.write("<head>\n");
+        							out.write("<title>Contacts</title>\n");
+        							out.write("<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"/>\n");
+        							out.write("</head>\n");
+        							out.write("</body>\n");
+    								out.write("<ul>");
+        							do {
+        								if(lastName.equals(cursor.getString(indexName))) {
+            								out.write(" [" + cursor.getString(indexNumber) + "]");
+        								} else {
+        									lastName = cursor.getString(indexName);
+        									out.write("<li>" + lastName + " [" + cursor.getString(indexNumber)+ "]");
+        								}
+        							} while(cursor.moveToNext());
+    								out.write("</ul>");
+        							out.write("</body>\n");
+        							out.write("</html>\n");
+        						}
+        						cursor.close();
+           						out.flush();
+        					} else {
+        						out.write(r404 + endHeaders + getString(R.string.httpNotFound));
+           						out.flush();
+        					}
        						out.flush();
         					break;
         				}
