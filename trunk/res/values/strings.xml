@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <string name="hello">Hello World, HttpSyncActivity!</string>
     <string name="app_name">HttpSync</string>
-
+    <string name="httpBadRequest">Bad Request</string>
+    <string name="httpNotFound">Not Found</string>
+    
 </resources>
