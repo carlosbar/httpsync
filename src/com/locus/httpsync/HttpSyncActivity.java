@@ -24,16 +24,62 @@ import com.locus.httpsync.Httpd;
 import com.locus.httpsync.R;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
 import android.os.PowerManager;
+import android.widget.TextView;
+import android.widget.Toast;
 
 public class HttpSyncActivity extends Activity {
-	private	PowerManager.WakeLock		wl;
-	private SharedPreferences			prefs;
-	private	SharedPreferences.Editor	prefset;
+	private			PowerManager.WakeLock		wl;
+	private 		SharedPreferences			prefs;
+	private			SharedPreferences.Editor	prefset;
+    private 		Messenger 					mService = null;
+	private			boolean						mBound;
+
+	/* receive messages from server */
+	private final	Messenger					mMessenger = new Messenger(new Handler() {
+    	public void handleMessage(Message msg) {
+    		switch(msg.what) {
+    		case Httpd.ipcMsg_showMsg:
+    			((TextView) findViewById(R.id.statusBar)).setText((String) msg.obj);
+    			break;
+    		}
+		}
+	});
+
+
+    /**
+     * Class for interacting with the main interface of the service.
+     */
+    private ServiceConnection mConnection = new ServiceConnection() {
+        public void onServiceConnected(ComponentName className, IBinder service) {
+            mService = new Messenger(service);
+            try {
+                Message msg = Message.obtain(null,Httpd.ipcMsg_registerClient);
+                msg.replyTo = mMessenger;
+            	mService.send(msg);
+                msg = Message.obtain(null,Httpd.ipcMsg_startServer);
+            	mService.send(msg);
+            } catch(Exception e) {
+            	e.printStackTrace();
+            }
+            mBound = true;
+        }
+
+        public void onServiceDisconnected(ComponentName className) {
+            mService = null;
+            mBound = false;
+        }
+    };
 	
 	/** Called when the activity is first created. */
     @Override
@@ -47,18 +93,16 @@ public class HttpSyncActivity extends Activity {
 		prefset = prefs.edit();
 		prefset.putInt("SERVER_PORT",8080);
 		prefset.commit();
-
-		Intent intent = new Intent(HttpSyncActivity.this,Httpd.class);
-		startService(intent);
-		
     }
 
     @Override
     public void onBackPressed() {
     	// TODO Auto-generated method stub
     	super.onBackPressed();
-		Intent intent = new Intent(HttpSyncActivity.this, Httpd.class);
-		HttpSyncActivity.this.stopService(intent);
+        if (mBound) {
+            unbindService(mConnection);
+            mBound = false;
+        }
     }
     
     
@@ -67,6 +111,7 @@ public class HttpSyncActivity extends Activity {
     	// TODO Auto-generated method stub
     	super.onStart();
     	wl.acquire();
+        bindService(new Intent(this, Httpd.class), mConnection,Context.BIND_AUTO_CREATE);
     }
     
 	@Override
