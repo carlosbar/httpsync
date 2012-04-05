@@ -44,6 +44,8 @@ import android.net.wifi.WifiManager;
 import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
 import android.provider.Contacts;
 import android.provider.ContactsContract;
 import android.provider.ContactsContract.RawContacts;
@@ -56,67 +58,67 @@ public class Httpd extends Service {
 	private 			SharedPreferences			prefs;
 	private				SharedPreferences.Editor	prefset;
 	private				Thread						tserver;
-	private				boolean						exiting=false;
+	private				boolean						running=false;
 	private enum		msgType						{status};
 	private				ServerSocket				serverSocket;
-	private				boolean						started=false;
-	private final		IBinder						mBinder = new LocalBinder();
-	private final		Handler						handler = new Handler();
+	private				Messenger					clientMessenger = null;
 
 	/* http constants */
 	
 	private final		String						r200 		= "HTTP/1.0 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n";
 	private final		String						r200jpg		= "HTTP/1.0 200 OK\r\nConnection: close\r\nContent-Type: image/jpeg\r\n";
 	private final		String						r400 		= "HTTP/1.0 400 Bad Request\r\nConnection: close\r\nContent-Type: text/html\r\n";
-	private final		String						r404 		= "HTTP/1.0 404 Not Found\r\nConnection: close\r\nContent-Type: text/html\r\n";
-	private final		String						endHeaders	= "\r\n";
-	
-	/**
-	 * Class for clients to access. Because we know this service always runs in
-	 * the same process as its clients, we don't need to deal with IPC.
-	 */
-	public class LocalBinder extends Binder {
-		Httpd getService() {
-			return Httpd.this;
-		}
-	}
+	private	final		String						r404 		= "HTTP/1.0 404 Not Found\r\nConnection: close\r\nContent-Type: text/html\r\n";
+	private	final		String						endHeaders	= "\r\n";
 
+	/* messages from client */
+	
+	public	static	final	int						ipcMsg_registerClient = 0;
+	public	static	final	int						ipcMsg_showMsg = 1;
+	public	static	final	int						ipcMsg_startServer = 2;
+	
+    private final		Messenger					mMessenger = new Messenger(new Handler() {
+    	public void handleMessage(Message msg) {
+    	
+	    	switch(msg.what) {
+	    	case ipcMsg_registerClient:
+	    		clientMessenger = msg.replyTo;
+	   			break;
+	    	case ipcMsg_startServer:
+	    		try {
+	    			serverSocket = new ServerSocket(prefs.getInt("SERVER_PORT",8080),0,InetAddress.getByName(prefs.getString("SERVER_IP","127.0.0.1")));
+	    			tserver = new Thread(new ServerThread());
+	    			tserver.start();
+	    		} catch(Exception e) {
+	    			if(running) {
+	    				sendMsg(msgType.status,"Listening on IP: " + prefs.getString("SERVER_IP","127.0.0.1") + " port: "+prefs.getInt("SERVER_PORT",8080));
+	    			}
+	    			e.printStackTrace();
+	    		}
+	    		break;
+	    	}
+    	}
+    	
+	});
+	
 	@Override
 	public void onCreate() {
+		Toast.makeText(this,"teste",Toast.LENGTH_LONG).show();
+
+		prefs = getSharedPreferences(Httpd.PREFS_DB, 0);
+		prefset = prefs.edit();
+		prefset.putString("SERVER_IP", getLocalIpAddress());
+		prefset.commit();
 	}
 	
 	@Override
 	public IBinder onBind(Intent arg0) {
-		// TODO Auto-generated method stub
-		return mBinder;
-	}
-
-	@Override
-	public int onStartCommand(Intent intent, int flags, int startId) {
-		Toast.makeText(this, "teste",Toast.LENGTH_LONG).show();
-		Log.d("httpSync","onStartCommand");
-		if(!started) {
-			try {
-				prefs = getSharedPreferences(Httpd.PREFS_DB, 0);
-				prefset = prefs.edit();
-				prefset.putString("SERVER_IP", getLocalIpAddress());
-				prefset.commit();
-    			serverSocket = new ServerSocket(prefs.getInt("SERVER_PORT",8080),0,InetAddress.getByName(prefs.getString("SERVER_IP","127.0.0.1")));
-				tserver = new Thread(new ServerThread());
-				tserver.start();
-				exiting=false;
-				started=true;
-			} catch(Exception e) {
-				e.printStackTrace();
-			}
-		}
-		return START_STICKY;
+		return mMessenger.getBinder();
 	}
 
 	@Override
 	public void onDestroy() {
-		exiting = true;
-		started = false;
+		running = false;
 		if(serverSocket != null) {
 			try {
 				serverSocket.close();
@@ -127,16 +129,17 @@ public class Httpd extends Service {
 		}
 	}
 	
-	public void sendMsg(msgType type,final String msg) {
+	public void sendMsg(msgType type,final String strmsg) {
 		switch(type) {
 		case status:
-			handler.post(new Runnable() {
-				
-				@Override
-				public void run() {
-					Toast.makeText(Httpd.this,msg,Toast.LENGTH_LONG).show();
+			if(clientMessenger != null) {
+				Message msg = Message.obtain(null,ipcMsg_showMsg,strmsg);
+				try {
+					clientMessenger.send(msg);
+				} catch(Exception e) {
+					e.printStackTrace();
 				}
-			});
+			}
 			break;
 		}
 	}
@@ -161,8 +164,8 @@ public class Httpd extends Service {
 	
 	private class ServerThread implements Runnable {
         public void run() {
-           	while (!exiting) {
-        		sendMsg(msgType.status,"Listening on IP: " + prefs.getString("SERVER_IP","127.0.0.1") + " port: "+prefs.getInt("SERVER_PORT",8080));
+			running=true;
+           	while (running) {
         		try {
         			Socket client = serverSocket.accept();
         			sendMsg(msgType.status,"received connection ip: " + client.getInetAddress().getHostAddress());
