@@ -15,19 +15,19 @@
   			}
 			xmlhttp.onreadystatechange=function() {	
 				if(xmlhttp.readyState == 4 && xmlhttp.status == 200) {
-					var container=document.getElementById("container"),cel,row,table,items,contact,x,y,contacts,value;
+					var container=document.getElementById("container"),cel,row,irow,table,itable,items,contact,x,y,contacts,value;
 					
-					contacts = xmlhttp.responseXML.getElementsByTagName("contact");
+					contacts = xmlhttp.responseXML.getElementsByTagName("c");
 					for(x=0;x < contacts.length;x++) {
-						items = contacts[x].getElementsByTagName("item");
+						items = contacts[x].getElementsByTagName("i");
 						contact = document.createElement("div");
 						contact.innerHTML = "<table style='border:1px solid gray;' id='table" + x + "'></table>"
 						container.appendChild(contact);
 						table = document.getElementById('table'+x);
 						/* picture */
 						for(value=null,y=0;y < items.length;y++) {
-							if(items[y].getAttribute("content_type") == "photo") {
-								value=items[y].getAttribute("value");
+							if(items[y].getAttribute("ct") == "photo") {
+								value=items[y].getAttribute("v");
 								break;
 							}
 						}
@@ -35,34 +35,49 @@
 						cel = row.insertCell(-1);
 						cel.width = "100";
 						cel.align = "center";
-						cel.innerHTML = "<img align='middle' src='/cimg/" + ((value) ? value : 0) + ".jpg'/>";
+						if(!value) {
+							cel.innerHTML = "<img align='middle' src='/img/contacts.jpg' />";
+						} else {
+							cel.innerHTML = "<img align='middle' src='/cimg/" + ((value) ? value : 0) + ".jpg'/>";
+						}
 						cel.style.borderRight="1px solid gray";
 						cel.style.padding=0;
 						cel = row.insertCell(-1);
-						cel.width = "400";
+						cel.width = "250";
 						cel.innerHTML =  "<table id='itable" + x + "'></table>"
-						table = document.getElementById('itable'+x);
+						itable = document.getElementById('itable'+x);
 						/* contact name */
 						for(value="",y=0;y < items.length;y++) {
-							if(items[y].getAttribute("content_type") == "structuredname") {
-								value=items[y].getAttribute("value");
+							if(items[y].getAttribute("ct") == "structuredname") {
+								value=items[y].getAttribute("v");
 								break;
 							}
 						}
-						row = table.insertRow(-1);
-						cel = row.insertCell(-1);
+						irow = itable.insertRow(-1);
+						cel = irow.insertCell(-1);
 						var id = contacts[x].getAttribute("id");
 						cel.innerHTML = "<div style='cursor:pointer' onclick='getContact(" + id + ")'>" + value + "</div>" ;
 						/* contact name */
 						for(value="",y=0;y < items.length;y++) {
-							if(items[y].getAttribute("content_type") == "organization") {
-								value=items[y].getAttribute("value");
+							if(items[y].getAttribute("ct") == "organization") {
+								value=items[y].getAttribute("v");
 								break;
 							}
 						}
-						row = table.insertRow(-1);
-						cel = row.insertCell(-1);
+						irow = itable.insertRow(-1);
+						cel = irow.insertCell(-1);
 						cel.innerHTML = "<i>" + value + "</i>";
+						/* other information */
+						for(value="",y=0;y < items.length;y++) {
+							if(items[y].getAttribute("ct") == "phone") {
+								value+= "<div>" + items[y].getAttribute("t") + ": " + items[y].getAttribute("v") + "</div>";
+							} else if(items[y].getAttribute("ct") == "email") {
+								value+= "<div>" + items[y].getAttribute("v") + "</div>";
+							}
+						}
+						cel = row.insertCell(-1);
+						cel.width = "250";
+						cel.innerHTML=value;
     				}
   				}
 			}
@@ -74,26 +89,26 @@
 				xmlhttp.onreadystatechange=function() {	
 					if(xmlhttp.readyState == 4 && xmlhttp.status == 200) {
 						document.getElementById("contactInfo").style.display="";
-						var contact = xmlhttp.responseXML.getElementsByTagName("contact")[0];
-						var items = contact.getElementsByTagName("item");
+						var contact = xmlhttp.responseXML.getElementsByTagName("c")[0];
+						var items = contact.getElementsByTagName("i");
 						
 						/* contact name */
 						for(value="",y=0;y < items.length;y++) {
-							if(items[y].getAttribute("content_type") == "structuredname") {
-								value+=items[y].getAttribute("value") + "<br/>";
+							if(items[y].getAttribute("ct") == "structuredname") {
+								value+=items[y].getAttribute("v") + "<br/>";
 								break;
 							}
 						}
 						for(y=0;y < items.length;y++) {
-							if(items[y].getAttribute("content_type") == "organization") {
-								value+=items[y].getAttribute("value") + "<br/>";
+							if(items[y].getAttribute("ct") == "organization") {
+								value+=items[y].getAttribute("v") + "<br/>";
 								break;
 							}
 						}
 						value+="<br/>";
 						for(y=0;y < items.length;y++) {
-							if(items[y].getAttribute("content_type") == "phone") {
-								value+=items[y].getAttribute("value") + " (" + items[y].getAttribute("type") + ")<br/>";
+							if(items[y].getAttribute("ct") == "phone") {
+								value+=items[y].getAttribute("v") + " (" + items[y].getAttribute("t") + ")<br/>";
 							}
 						}
 						document.getElementById("childInfo").innerHTML = value;
@@ -107,14 +122,15 @@
 			
 		</script>
 	</head>
-<body>
-<center>
-<div id="container" style="font-family:courier new;font-size:11px">
+<body bgcolor="lemonChiffon">
+
+<div id="container" style="margin-left:20px;font-family:courier new;font-size:11px">
+</div>
+
 <div id="contactInfo" style="display: none;">
 	<div style="background-color:black;opacity:.9; width: 300px;height: 200px;position:absolute;left:400px;top:200px;"></div>
 	<div id="childInfo" style="color:white; text-align:left; position:absolute; width: 300px; height: 200px;position:absolute;left:400px;top:200px;"></div>
 </div>
-</div>
-</center>
+
 </body>
 </html>
