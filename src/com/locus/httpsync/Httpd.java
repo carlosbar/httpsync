@@ -35,6 +35,7 @@ import android.content.ContentUris;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
@@ -210,13 +211,53 @@ public class Httpd extends Service {
         					}
         					/* handle uri */
         					if(uri[0].equals("/")) {	/* home page */
-        						sendBuffer(out,r200 + endHeaders + getString(R.string.app_name) + Httpd.this.getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+    							/* get contacts html file */
+        						sendBuffer(out,r200 + endHeaders);
+        						InputStream f = getAssets().open("home.html");
+    							if(f != null) {
+    								byte[]	b = new byte[1024];
+    								int		sz=0;
+    								
+    								do {
+    									sz=f.read(b);
+    									if(sz > 0) sendBuffer(out,b,sz);
+    								} while(sz >= 0);
+    								f.close();
+    							}
+        					} else if(uri[0].equals("/version")) {
+        						sendBuffer(out,r200xml + endHeaders);
+        						sendBuffer(out,"<version>" + getString(R.string.app_name) + Httpd.this.getPackageManager().getPackageInfo(getPackageName(), 0).versionName + "</version>");
+        					} else if(uri[0].startsWith("/img/")) {	/* image from contact */
+        							int			sz;
+    								byte[]		b = new byte[512];
+    								String		name = uri[0].split("/")[2];
+									InputStream	icon=null;
+	        					    String		mime="";
+        							
+    								try {
+    									if(name.startsWith("contact")) {
+    										icon = getResources().openRawResource(R.drawable.contact);
+    		        					    mime = "Content-Type: image/jpeg";
+    									}
+    									if(mime.length() != 0) {
+    										sendBuffer(out,r200raw);
+    										sendBuffer(out,mime + "\r\n" + endHeaders);
+    										do {
+    											sz=icon.read(b);
+    											if(sz > 0) sendBuffer(out,b,sz);
+    										} while(sz > 0);
+    										icon.close();
+    									}
+    								} catch(Exception e) {
+    									e.printStackTrace();
+    								}
         					} else if(uri[0].startsWith("/cimg/")) {	/* image from contact */
         						byte[] 		img=null;
         						int 		photoId = Integer.parseInt(uri[0].split("/")[2].split("[.]")[0]);
+        					    String		mime = "Content-Type: image/jpeg";
+        						
         					    Uri 		imguri = ContentUris.withAppendedId(Data.CONTENT_URI, photoId);
         					    Cursor		c = getContentResolver().query(imguri, new String[] {Photo.PHOTO,Photo.MIMETYPE}, null, null, null);
-        					    String		mime = "Content-Type: image/jpeg";
         					    
         					    try {
         				            if (c.moveToFirst()) {
@@ -230,7 +271,6 @@ public class Httpd extends Service {
         					    if(img != null) {
         					    	sendBuffer(out,r200raw);
         					    	sendBuffer(out,mime + "\r\n");
-        					    	sendBuffer(out,"Content-Disposition: inline; " + photoId + ".png\r\n");
         					    	sendBuffer(out,"Content-Length: " + img.length + "\r\n" + endHeaders);
         					    	sendBuffer(out,img,img.length);
         					    } else {
@@ -244,14 +284,14 @@ public class Httpd extends Service {
         						} catch(Exception e) {
         							photoId = 0;
         						}
-    							sendBuffer(out,getContactInfo(id,photoId));
+    							sendBuffer(out,getContactInfo(id,photoId,true));
         						
         					} else if(uri[0].equals("/contacts/xml")) {
         						LinkedList<Integer> ll = new LinkedList(); 
         						
         						sendBuffer(out,r200xml + endHeaders);
         						Cursor cursor = getContentResolver().query(Phone.CONTENT_URI, new String[] {Phone.RAW_CONTACT_ID,Phone.PHOTO_ID}, null, null, Phone.DISPLAY_NAME + " COLLATE NOCASE ASC;");
-								sendBuffer(out,"<contacts>");
+								sendBuffer(out,"<contacts version=\"1.0\">");
         						while(cursor.moveToNext()) {
         							int 	id = cursor.getInt(cursor.getColumnIndex(Phone.RAW_CONTACT_ID));
 
@@ -259,7 +299,7 @@ public class Httpd extends Service {
         								continue;
         							}
         							ll.add(id);
-        							sendBuffer(out,getContactInfo(id,cursor.getInt(cursor.getColumnIndex(Phone.PHOTO_ID))));
+        							sendBuffer(out,getContactInfo(id,cursor.getInt(cursor.getColumnIndex(Phone.PHOTO_ID)),true));
         						}
 								sendBuffer(out,"</contacts>");
         						cursor.close();
@@ -298,7 +338,7 @@ public class Httpd extends Service {
         }
     }
 
-	private String getContactInfo(int id,int photoid)
+	private String getContactInfo(int id,int photoid,boolean full)
 	{
 		StringBuilder cinfo = new StringBuilder();
 		
@@ -308,7 +348,7 @@ public class Httpd extends Service {
 		if(c.isAfterLast()) {
 			return("");
 		}
-		cinfo.append("<contact id=\"" + id + "\">");
+		cinfo.append("<c id=\"" + id + "\">");
 		while (c.moveToNext()) {
 			if (c.isNull(c.getColumnIndex(Entity.DATA_ID))) {
 				continue;
@@ -316,75 +356,75 @@ public class Httpd extends Service {
 			String entityMime = c.getString(c.getColumnIndex(Entity.MIMETYPE));
 			String value = c.getString(c.getColumnIndex(Entity.DATA1));
 			if(StructuredName.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"structuredname\"");
+				cinfo.append("<i ct=\"structuredname\"");
 			} else if(Phone.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"phone\"");
+				cinfo.append("<i ct=\"phone\"");
 				switch(Integer.parseInt(c.getString(c.getColumnIndex(Entity.DATA2)))) {
-				case BaseTypes.TYPE_CUSTOM: cinfo.append(" type=\"custom\""); break;
-				case Phone.TYPE_HOME: cinfo.append(" type=\"home\""); break;
-				case Phone.TYPE_MOBILE: cinfo.append(" type=\"mobile\""); break;
-				case Phone.TYPE_WORK: cinfo.append(" type=\"work\""); break;
-				case Phone.TYPE_FAX_WORK: cinfo.append(" type=\"fax_work\""); break;
-				case Phone.TYPE_FAX_HOME: cinfo.append(" type=\"fax_home\""); break;
-				case Phone.TYPE_PAGER: cinfo.append(" type=\"pager\""); break;
-				case Phone.TYPE_OTHER: cinfo.append(" type=\"other\""); break;
-				case Phone.TYPE_CALLBACK: cinfo.append(" type=\"callback\""); break;
-				case Phone.TYPE_CAR: cinfo.append(" type=\"car\""); break;
-				case Phone.TYPE_COMPANY_MAIN: cinfo.append(" type=\"company_main\""); break;
-				case Phone.TYPE_ISDN: cinfo.append(" type=\"isdn\""); break;
-				case Phone.TYPE_MAIN: cinfo.append(" type=\"main\""); break;
-				case Phone.TYPE_OTHER_FAX: cinfo.append(" type=\"other_fax\""); break;
-				case Phone.TYPE_RADIO: cinfo.append(" type=\"radio\""); break;
-				case Phone.TYPE_TELEX: cinfo.append(" type=\"telex\""); break;
-				case Phone.TYPE_TTY_TDD: cinfo.append(" type=\"tty_tdd\""); break;
-				case Phone.TYPE_WORK_MOBILE: cinfo.append(" type=\"work_mobile\""); break;
-				case Phone.TYPE_WORK_PAGER: cinfo.append(" type=\"work_pager\""); break;
-				case Phone.TYPE_ASSISTANT: cinfo.append(" type=\"assitant\""); break;
-				case Phone.TYPE_MMS: cinfo.append(" type=\"mms\""); break;
+				case BaseTypes.TYPE_CUSTOM: cinfo.append(" t=\"custom\""); break;
+				case Phone.TYPE_HOME: cinfo.append(" t=\"home\""); break;
+				case Phone.TYPE_MOBILE: cinfo.append(" t=\"mobile\""); break;
+				case Phone.TYPE_WORK: cinfo.append(" t=\"work\""); break;
+				case Phone.TYPE_FAX_WORK: cinfo.append(" t=\"fax_work\""); break;
+				case Phone.TYPE_FAX_HOME: cinfo.append(" t=\"fax_home\""); break;
+				case Phone.TYPE_PAGER: cinfo.append(" t=\"pager\""); break;
+				case Phone.TYPE_OTHER: cinfo.append(" t=\"other\""); break;
+				case Phone.TYPE_CALLBACK: cinfo.append(" t=\"callback\""); break;
+				case Phone.TYPE_CAR: cinfo.append(" t=\"car\""); break;
+				case Phone.TYPE_COMPANY_MAIN: cinfo.append(" t=\"company_main\""); break;
+				case Phone.TYPE_ISDN: cinfo.append(" t=\"isdn\""); break;
+				case Phone.TYPE_MAIN: cinfo.append(" t=\"main\""); break;
+				case Phone.TYPE_OTHER_FAX: cinfo.append(" t=\"other_fax\""); break;
+				case Phone.TYPE_RADIO: cinfo.append(" t=\"radio\""); break;
+				case Phone.TYPE_TELEX: cinfo.append(" t=\"telex\""); break;
+				case Phone.TYPE_TTY_TDD: cinfo.append(" t=\"tty_tdd\""); break;
+				case Phone.TYPE_WORK_MOBILE: cinfo.append(" t=\"work_mobile\""); break;
+				case Phone.TYPE_WORK_PAGER: cinfo.append(" t=\"work_pager\""); break;
+				case Phone.TYPE_ASSISTANT: cinfo.append(" t=\"assitant\""); break;
+				case Phone.TYPE_MMS: cinfo.append(" t=\"mms\""); break;
 				default:
-					cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\"");
+					cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\"");
 					break;
 				}
 			} else if(Email.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"email\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
-			} else if(Event.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"event\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
-			} else if(Nickname.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"nickname\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+				cinfo.append("<i ct=\"email\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(full && Event.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<i ct=\"event\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(full && Nickname.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<i ct=\"nickname\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
 			} else if(Photo.CONTENT_ITEM_TYPE.equals(entityMime)) {
 				if(photoid == 0) continue;
-				cinfo.append("<item content_type=\"photo\"");
+				cinfo.append("<i ct=\"photo\"");
 				value = String.valueOf(photoid);
-			} else if(GroupMembership.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"groupmembership\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
-			} else if(StructuredPostal.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"structuredpostal\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
-			} else if(Im.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"im\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
-			} else if(Note.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"note\"");
+			} else if(full && GroupMembership.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<i ct=\"groupmembership\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(full && StructuredPostal.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<i ct=\"structuredpostal\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(full && Im.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<i ct=\"im\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(full && Note.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<i ct=\"note\"");
 			} else if(Organization.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"organization\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
-			} else if(Relation.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"relation\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
-			} else if(Website.CONTENT_ITEM_TYPE.equals(entityMime)) {
-				cinfo.append("<item content_type=\"website\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+				cinfo.append("<i ct=\"organization\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(full && Relation.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<i ct=\"relation\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(full && Website.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<i ct=\"website\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
 			} else {
-				cinfo.append("<item content_type=\"" + entityMime + "\"");
-				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+				cinfo.append("<i ct=\"" + entityMime + "\"");
+				cinfo.append(" t=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
 			}
-			cinfo.append(" value=\"" + value + "\"/>");
+			cinfo.append(" v=\"" + value + "\"/>");
 		}
-		cinfo.append("</contact>");
+		cinfo.append("</c>");
 		c.close();
 		return(cinfo.toString());
 	}

@@ -1,0 +1,29 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en-US" xml:lang="en-US" xmlns="http://www.w3.org/1999/xhtml">
+	<head>
+		<title>Home</title>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+		<script type="text/javascript">
+			var xmlhttp,timeoutId=0;
+
+			if(window.XMLHttpRequest) {
+				/* code for IE7+, Firefox, Chrome, Opera, Safari */
+  				xmlhttp=new XMLHttpRequest();
+  			} else {
+				/* code for IE6, IE5 */
+	  			xmlhttp=new ActiveXObject("Microsoft.XMLHTTP");
+  			}
+			xmlhttp.onreadystatechange=function() {
+				if(xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+					document.getElementById("version").innerHTML = xmlhttp.responseXML.getElementsByTagName("version")[0].firstChild.nodeValue;
+				}
+			}
+			xmlhttp.open("GET","/version",true);
+			xmlhttp.send();
+		</script>	
+	</head>
+<body bgcolor="lemonChiffon">
+<a href="/contacts">Contacts</a>
+<div id="version" style="position:absolute;bottom:5px;left:10px;width:300px;height:20px;"></div>
+</body>
+</html>
