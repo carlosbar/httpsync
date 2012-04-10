@@ -3,5 +3,118 @@
 	<head>
 		<title>Contacts</title>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+		<script type="text/javascript">
+			var xmlhttp,timeoutId=0;
+
+			if(window.XMLHttpRequest) {
+				/* code for IE7+, Firefox, Chrome, Opera, Safari */
+  				xmlhttp=new XMLHttpRequest();
+  			} else {
+				/* code for IE6, IE5 */
+	  			xmlhttp=new ActiveXObject("Microsoft.XMLHTTP");
+  			}
+			xmlhttp.onreadystatechange=function() {	
+				if(xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+					var container=document.getElementById("container"),cel,row,table,items,contact,x,y,contacts,value;
+					
+					contacts = xmlhttp.responseXML.getElementsByTagName("contact");
+					for(x=0;x < contacts.length;x++) {
+						items = contacts[x].getElementsByTagName("item");
+						contact = document.createElement("div");
+						contact.innerHTML = "<table style='border:1px solid gray;' id='table" + x + "'></table>"
+						container.appendChild(contact);
+						table = document.getElementById('table'+x);
+						/* picture */
+						for(value=null,y=0;y < items.length;y++) {
+							if(items[y].getAttribute("content_type") == "photo") {
+								value=items[y].getAttribute("value");
+								break;
+							}
+						}
+						row = table.insertRow(-1);
+						cel = row.insertCell(-1);
+						cel.width = "100";
+						cel.align = "center";
+						cel.innerHTML = "<img align='middle' src='/cimg/" + ((value) ? value : 0) + ".jpg'/>";
+						cel.style.borderRight="1px solid gray";
+						cel.style.padding=0;
+						cel = row.insertCell(-1);
+						cel.width = "400";
+						cel.innerHTML =  "<table id='itable" + x + "'></table>"
+						table = document.getElementById('itable'+x);
+						/* contact name */
+						for(value="",y=0;y < items.length;y++) {
+							if(items[y].getAttribute("content_type") == "structuredname") {
+								value=items[y].getAttribute("value");
+								break;
+							}
+						}
+						row = table.insertRow(-1);
+						cel = row.insertCell(-1);
+						var id = contacts[x].getAttribute("id");
+						cel.innerHTML = "<div style='cursor:pointer' onclick='getContact(" + id + ")'>" + value + "</div>" ;
+						/* contact name */
+						for(value="",y=0;y < items.length;y++) {
+							if(items[y].getAttribute("content_type") == "organization") {
+								value=items[y].getAttribute("value");
+								break;
+							}
+						}
+						row = table.insertRow(-1);
+						cel = row.insertCell(-1);
+						cel.innerHTML = "<i>" + value + "</i>";
+    				}
+  				}
+			}
+			xmlhttp.open("GET","/contacts/xml",true);
+			xmlhttp.send();
+			
+			function getContact(id,photoid)
+			{
+				xmlhttp.onreadystatechange=function() {	
+					if(xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+						document.getElementById("contactInfo").style.display="";
+						var contact = xmlhttp.responseXML.getElementsByTagName("contact")[0];
+						var items = contact.getElementsByTagName("item");
+						
+						/* contact name */
+						for(value="",y=0;y < items.length;y++) {
+							if(items[y].getAttribute("content_type") == "structuredname") {
+								value+=items[y].getAttribute("value") + "<br/>";
+								break;
+							}
+						}
+						for(y=0;y < items.length;y++) {
+							if(items[y].getAttribute("content_type") == "organization") {
+								value+=items[y].getAttribute("value") + "<br/>";
+								break;
+							}
+						}
+						value+="<br/>";
+						for(y=0;y < items.length;y++) {
+							if(items[y].getAttribute("content_type") == "phone") {
+								value+=items[y].getAttribute("value") + " (" + items[y].getAttribute("type") + ")<br/>";
+							}
+						}
+						document.getElementById("childInfo").innerHTML = value;
+						timeoutId=setTimeout("timeoutId=0;document.getElementById('contactInfo').style.display='none';",5000);
+					}
+				}
+				if(timeoutId) cancelTimeout(timeoutId);
+				xmlhttp.open("GET","/contact/" + id + "/" + photoid,true);
+				xmlhttp.send();
+			}
+			
+		</script>
 	</head>
 <body>
+<center>
+<div id="container" style="font-family:courier new;font-size:11px">
+<div id="contactInfo" style="display: none;">
+	<div style="background-color:black;opacity:.9; width: 300px;height: 200px;position:absolute;left:400px;top:200px;"></div>
+	<div id="childInfo" style="color:white; text-align:left; position:absolute; width: 300px; height: 200px;position:absolute;left:400px;top:200px;"></div>
+</div>
+</div>
+</center>
+</body>
+</html>

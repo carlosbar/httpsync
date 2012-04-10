@@ -20,14 +20,13 @@
 
 package com.locus.httpsync;
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.LinkedList;
 
 import com.locus.httpsync.R;
 
@@ -36,21 +35,33 @@ import android.content.ContentUris;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
-import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.Messenger;
-import android.provider.Contacts;
 import android.provider.ContactsContract;
+import android.provider.ContactsContract.CommonDataKinds;
+import android.provider.ContactsContract.CommonDataKinds.BaseTypes;
+import android.provider.ContactsContract.CommonDataKinds.Email;
+import android.provider.ContactsContract.CommonDataKinds.Event;
+import android.provider.ContactsContract.CommonDataKinds.GroupMembership;
+import android.provider.ContactsContract.CommonDataKinds.Im;
+import android.provider.ContactsContract.CommonDataKinds.Nickname;
+import android.provider.ContactsContract.CommonDataKinds.Note;
+import android.provider.ContactsContract.CommonDataKinds.Organization;
+import android.provider.ContactsContract.CommonDataKinds.Phone;
+import android.provider.ContactsContract.CommonDataKinds.Photo;
+import android.provider.ContactsContract.CommonDataKinds.Relation;
+import android.provider.ContactsContract.CommonDataKinds.StructuredName;
+import android.provider.ContactsContract.CommonDataKinds.StructuredPostal;
+import android.provider.ContactsContract.CommonDataKinds.Website;
+import android.provider.ContactsContract.Contacts;
+import android.provider.ContactsContract.Data;
 import android.provider.ContactsContract.RawContacts;
-import android.util.Log;
-import android.widget.Toast;
+import android.provider.ContactsContract.RawContacts.Entity;
 
 
 public class Httpd extends Service {
@@ -66,7 +77,8 @@ public class Httpd extends Service {
 	/* http constants */
 	
 	private final		String						r200 		= "HTTP/1.0 200 OK\r\nConnection: close\r\nContent-Type: text/html\r\n";
-	private final		String						r200jpg		= "HTTP/1.0 200 OK\r\nConnection: close\r\nContent-Type: image/jpeg\r\n";
+	private final		String						r200xml		= "HTTP/1.0 200 OK\r\nConnection: close\r\nContent-Type: text/xml\r\n";
+	private final		String						r200raw		= "HTTP/1.0 200 OK\r\nConnection: close\r\n";
 	private final		String						r400 		= "HTTP/1.0 400 Bad Request\r\nConnection: close\r\nContent-Type: text/html\r\n";
 	private	final		String						r404 		= "HTTP/1.0 404 Not Found\r\nConnection: close\r\nContent-Type: text/html\r\n";
 	private	final		String						endHeaders	= "\r\n";
@@ -89,6 +101,7 @@ public class Httpd extends Service {
 	    			serverSocket = new ServerSocket(prefs.getInt("SERVER_PORT",8080),0,InetAddress.getByName(prefs.getString("SERVER_IP","127.0.0.1")));
 	    			tserver = new Thread(new ServerThread());
 	    			tserver.start();
+    				sendMsg(msgType.status,"Listening on IP: " + prefs.getString("SERVER_IP","127.0.0.1") + " port: "+prefs.getInt("SERVER_PORT",8080));
 	    		} catch(Exception e) {
 	    			if(running) {
 	    				sendMsg(msgType.status,"Listening on IP: " + prefs.getString("SERVER_IP","127.0.0.1") + " port: "+prefs.getInt("SERVER_PORT",8080));
@@ -103,8 +116,6 @@ public class Httpd extends Service {
 	
 	@Override
 	public void onCreate() {
-		Toast.makeText(this,"teste",Toast.LENGTH_LONG).show();
-
 		prefs = getSharedPreferences(Httpd.PREFS_DB, 0);
 		prefset = prefs.edit();
 		prefset.putString("SERVER_IP", getLocalIpAddress());
@@ -144,10 +155,10 @@ public class Httpd extends Service {
 		}
 	}
 	
-	private void sendBuffer(OutputStream out,byte[] b)
+	private void sendBuffer(OutputStream out,byte[] b,int size)
 	{
 		try {
-			out.write(b);
+			out.write(b, 0,size);
 		} catch(Exception e) {
 			e.printStackTrace();
 		}
@@ -156,7 +167,9 @@ public class Httpd extends Service {
 	private void sendBuffer(OutputStream out,String str)
 	{
 		try {
-			sendBuffer(out,str.getBytes());
+			byte[] b = str.getBytes();
+			
+			sendBuffer(out,b,b.length);
 		} catch(Exception e) {
 			e.printStackTrace();
 		}
@@ -166,8 +179,15 @@ public class Httpd extends Service {
         public void run() {
 			running=true;
            	while (running) {
+           		Socket client;
+           		
         		try {
-        			Socket client = serverSocket.accept();
+        			client = serverSocket.accept();
+        		} catch(Exception e) {
+        			e.printStackTrace();
+        			continue;
+        		}
+        		try {
         			sendMsg(msgType.status,"received connection ip: " + client.getInetAddress().getHostAddress());
         			BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
         			OutputStream out = client.getOutputStream(); 
@@ -194,70 +214,69 @@ public class Httpd extends Service {
         					} else if(uri[0].startsWith("/cimg/")) {	/* image from contact */
         						byte[] 		img=null;
         						int 		photoId = Integer.parseInt(uri[0].split("/")[2].split("[.]")[0]);
-        					    Uri 		imguri = ContentUris.withAppendedId(ContactsContract.Data.CONTENT_URI, photoId);
-        					    Cursor		c = getContentResolver().query(imguri, new String[] {ContactsContract.CommonDataKinds.Photo.PHOTO}, null, null, null);
+        					    Uri 		imguri = ContentUris.withAppendedId(Data.CONTENT_URI, photoId);
+        					    Cursor		c = getContentResolver().query(imguri, new String[] {Photo.PHOTO,Photo.MIMETYPE}, null, null, null);
+        					    String		mime = "Content-Type: image/jpeg";
         					    
         					    try {
-        				            if (c.moveToFirst()) img = c.getBlob(c.getColumnIndex(ContactsContract.CommonDataKinds.Photo.PHOTO));
+        				            if (c.moveToFirst()) {
+        				            	img = c.getBlob(c.getColumnIndex(CommonDataKinds.Photo.PHOTO));
+        				            	//mime = c.getString(c.getColumnIndex(CommonDataKinds.Photo.MIMETYPE));
+        				            }
         					    } catch(Exception e) {
         					    	img = null;
         					    }
 
         					    if(img != null) {
-        					    	sendBuffer(out,r200jpg);
+        					    	sendBuffer(out,r200raw);
+        					    	sendBuffer(out,mime + "\r\n");
         					    	sendBuffer(out,"Content-Disposition: inline; " + photoId + ".png\r\n");
         					    	sendBuffer(out,"Content-Length: " + img.length + "\r\n" + endHeaders);
-        					    	sendBuffer(out,img);
+        					    	sendBuffer(out,img,img.length);
         					    } else {
             						sendBuffer(out,r404 + endHeaders + getString(R.string.httpNotFound));
                						out.flush();
         					    }
-        					} else if(uri[0].equals("/contacts")) {	/* contacts */
-        						String[] projection = new String[] {ContactsContract.Data.RAW_CONTACT_ID,ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,ContactsContract.CommonDataKinds.Phone.NUMBER,ContactsContract.Contacts.PHOTO_ID};
-        						Cursor cursor = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, projection, null, null, ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " COLLATE NOCASE ASC;");
-        						//int indexID = cursor.getColumnIndex(ContactsContract.Data.RAW_CONTACT_ID);
-        						int indexName = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME);
-        						int indexNumber = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
-        						int indexPhotoId = cursor.getColumnIndex(ContactsContract.Contacts.PHOTO_ID);
-        						String lastName = "";
-        						sendBuffer(out,r200 + endHeaders);
-        						cursor.moveToFirst();
+        					} else if(uri[0].startsWith("/contact/")) {
+        						int photoId,id = Integer.parseInt(uri[0].split("/")[2]);
+        						try {
+        							photoId = Integer.parseInt(uri[0].split("/")[3]);
+        						} catch(Exception e) {
+        							photoId = 0;
+        						}
+    							sendBuffer(out,getContactInfo(id,photoId));
+        						
+        					} else if(uri[0].equals("/contacts/xml")) {
+        						LinkedList<Integer> ll = new LinkedList(); 
+        						
+        						sendBuffer(out,r200xml + endHeaders);
+        						Cursor cursor = getContentResolver().query(Phone.CONTENT_URI, new String[] {Phone.RAW_CONTACT_ID,Phone.PHOTO_ID}, null, null, Phone.DISPLAY_NAME + " COLLATE NOCASE ASC;");
+								sendBuffer(out,"<contacts>");
+        						while(cursor.moveToNext()) {
+        							int 	id = cursor.getInt(cursor.getColumnIndex(Phone.RAW_CONTACT_ID));
+
+        							if(ll.contains(id)) {
+        								continue;
+        							}
+        							ll.add(id);
+        							sendBuffer(out,getContactInfo(id,cursor.getInt(cursor.getColumnIndex(Phone.PHOTO_ID))));
+        						}
+								sendBuffer(out,"</contacts>");
+        						cursor.close();
+        					} else if(uri[0].equals("/contacts")) {		/* contacts page */
     							/* get contacts html file */
-    							InputStream f = getAssets().open("contacts.html");
+        						sendBuffer(out,r200 + endHeaders);
+        						InputStream f = getAssets().open("contacts.html");
     							if(f != null) {
-    								byte[]	b = new byte[512];
+    								byte[]	b = new byte[1024];
     								int		sz=0;
     								
     								do {
     									sz=f.read(b);
-    									if(sz > 0) sendBuffer(out,b);
+    									if(sz > 0) sendBuffer(out,b,sz);
     								} while(sz >= 0);
     								f.close();
     							}
-    							/* write records count */
-        						sendBuffer(out,"<div>"+ cursor.getCount() + " records</div></br>");
-        						if(!cursor.isAfterLast()) {
-        							/* now insert all contact names */
-    								sendBuffer(out,"<ul>");
-          							do {
-        								if(lastName.equals(cursor.getString(indexName))) {
-            								sendBuffer(out," [" + cursor.getString(indexNumber) + "]");
-        								} else {
-        									lastName = cursor.getString(indexName);
-        									int id = cursor.getInt(indexPhotoId); 
-        									if(id > 0) {
-        										sendBuffer(out,"<li><img align=\"middle\" src=\"/cimg/" + id + ".jpg\"/> "  + lastName + " [" + cursor.getString(indexNumber)+ "]");
-        									} else {
-        										sendBuffer(out,"<li>" + lastName + " [" + cursor.getString(indexNumber)+ "]");
-        									}
-        								}
-        							} while(cursor.moveToNext());
-          							/* end html file */
-    								sendBuffer(out,"</ul>");
-        							sendBuffer(out,"</body>\n");
-        							sendBuffer(out,"</html>\n");
-        						}
-        						cursor.close();
         					} else {
         						sendBuffer(out,r404 + endHeaders + getString(R.string.httpNotFound));
         					}
@@ -265,15 +284,111 @@ public class Httpd extends Service {
         				}
         			}
         			sendMsg(msgType.status,"closed connection to ip: " + client.getInetAddress().getHostAddress());
-        			client.shutdownOutput();
-    		        client.close();
         		} catch (Exception e) {
         			sendMsg(msgType.status,"Connection interrupted");
+        			e.printStackTrace();
 		        }
+        		try {
+        			client.shutdownOutput();
+        			client.close();
+        		} catch(Exception e) {
+        			e.printStackTrace();
+        		}
         	}
         }
     }
 
+	private String getContactInfo(int id,int photoid)
+	{
+		StringBuilder cinfo = new StringBuilder();
+		
+		Uri rawContactUri = ContentUris.withAppendedId(RawContacts.CONTENT_URI,id);
+		Uri entityUri = Uri.withAppendedPath(rawContactUri,Entity.CONTENT_DIRECTORY);
+		Cursor c = getContentResolver().query(entityUri,new String[]{RawContacts.SOURCE_ID,Entity.DATA_ID,Entity.MIMETYPE,Entity.DATA1,Entity.DATA2},null,null,null);
+		if(c.isAfterLast()) {
+			return("");
+		}
+		cinfo.append("<contact id=\"" + id + "\">");
+		while (c.moveToNext()) {
+			if (c.isNull(c.getColumnIndex(Entity.DATA_ID))) {
+				continue;
+			}
+			String entityMime = c.getString(c.getColumnIndex(Entity.MIMETYPE));
+			String value = c.getString(c.getColumnIndex(Entity.DATA1));
+			if(StructuredName.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"structuredname\"");
+			} else if(Phone.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"phone\"");
+				switch(Integer.parseInt(c.getString(c.getColumnIndex(Entity.DATA2)))) {
+				case BaseTypes.TYPE_CUSTOM: cinfo.append(" type=\"custom\""); break;
+				case Phone.TYPE_HOME: cinfo.append(" type=\"home\""); break;
+				case Phone.TYPE_MOBILE: cinfo.append(" type=\"mobile\""); break;
+				case Phone.TYPE_WORK: cinfo.append(" type=\"work\""); break;
+				case Phone.TYPE_FAX_WORK: cinfo.append(" type=\"fax_work\""); break;
+				case Phone.TYPE_FAX_HOME: cinfo.append(" type=\"fax_home\""); break;
+				case Phone.TYPE_PAGER: cinfo.append(" type=\"pager\""); break;
+				case Phone.TYPE_OTHER: cinfo.append(" type=\"other\""); break;
+				case Phone.TYPE_CALLBACK: cinfo.append(" type=\"callback\""); break;
+				case Phone.TYPE_CAR: cinfo.append(" type=\"car\""); break;
+				case Phone.TYPE_COMPANY_MAIN: cinfo.append(" type=\"company_main\""); break;
+				case Phone.TYPE_ISDN: cinfo.append(" type=\"isdn\""); break;
+				case Phone.TYPE_MAIN: cinfo.append(" type=\"main\""); break;
+				case Phone.TYPE_OTHER_FAX: cinfo.append(" type=\"other_fax\""); break;
+				case Phone.TYPE_RADIO: cinfo.append(" type=\"radio\""); break;
+				case Phone.TYPE_TELEX: cinfo.append(" type=\"telex\""); break;
+				case Phone.TYPE_TTY_TDD: cinfo.append(" type=\"tty_tdd\""); break;
+				case Phone.TYPE_WORK_MOBILE: cinfo.append(" type=\"work_mobile\""); break;
+				case Phone.TYPE_WORK_PAGER: cinfo.append(" type=\"work_pager\""); break;
+				case Phone.TYPE_ASSISTANT: cinfo.append(" type=\"assitant\""); break;
+				case Phone.TYPE_MMS: cinfo.append(" type=\"mms\""); break;
+				default:
+					cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\"");
+					break;
+				}
+			} else if(Email.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"email\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(Event.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"event\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(Nickname.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"nickname\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(Photo.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				if(photoid == 0) continue;
+				cinfo.append("<item content_type=\"photo\"");
+				value = String.valueOf(photoid);
+			} else if(GroupMembership.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"groupmembership\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(StructuredPostal.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"structuredpostal\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(Im.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"im\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(Note.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"note\"");
+			} else if(Organization.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"organization\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(Relation.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"relation\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else if(Website.CONTENT_ITEM_TYPE.equals(entityMime)) {
+				cinfo.append("<item content_type=\"website\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			} else {
+				cinfo.append("<item content_type=\"" + entityMime + "\"");
+				cinfo.append(" type=\"" + c.getString(c.getColumnIndex(Entity.DATA2)) + "\""); // type
+			}
+			cinfo.append(" value=\"" + value + "\"/>");
+		}
+		cinfo.append("</contact>");
+		c.close();
+		return(cinfo.toString());
+	}
+	
 	/**
 	 * get device WiFi ip address
 	 * @return the ipv4 ip address or localhost if not found
