@@ -5,6 +5,8 @@
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 		<script type="text/javascript">
 			var xmlhttp,timeoutId=0;
+			var names={"A":false,"B":false,"C":false,"D":false,"E":false,"F":false,"G":false,"H":false,"I":false,"J":false,"K":false,"L":false,"M":false,"N":false,"O":false,"P":false,"Q":false,"R":false,"S":false,"T":false,"U":false,"V":false,"W":false,"X":false,"Y":false,"Z":false};
+			var links = [];
 
 			if(window.XMLHttpRequest) {
 				/* code for IE7+, Firefox, Chrome, Opera, Safari */
@@ -24,6 +26,13 @@
 						contact.innerHTML = "<table style='border:1px solid gray;' id='table" + x + "'></table>"
 						container.appendChild(contact);
 						table = document.getElementById('table'+x);
+						/* contact name */
+						for(var name="",y=0;y < items.length;y++) {
+							if(items[y].getAttribute("ct") == "structuredname") {
+								name=items[y].getAttribute("v");
+								break;
+							}
+						}
 						/* picture */
 						for(value=null,y=0;y < items.length;y++) {
 							if(items[y].getAttribute("ct") == "photo") {
@@ -35,29 +44,32 @@
 						cel = row.insertCell(-1);
 						cel.width = "100";
 						cel.align = "center";
+						var bookmark = "";
+						if(name.length) {
+							var idx = name.substr(0,1).toUpperCase();
+			
+							if(names[idx] == false) {
+								names[idx] = true;
+								bookmark = "<a name=\"" + idx + "\"></a>";
+							}
+						}
 						if(!value) {
-							cel.innerHTML = "<img align='middle' src='/img/contacts.jpg' />";
+							cel.innerHTML = bookmark + "<img align='middle' src='/img/contacts.jpg' />";
 						} else {
-							cel.innerHTML = "<img align='middle' src='/cimg/" + ((value) ? value : 0) + ".jpg'/>";
+							cel.innerHTML = bookmark + "<img align='middle' src='/cimg/" + ((value) ? value : 0) + ".jpg'/>";
 						}
 						cel.style.borderRight="1px solid gray";
 						cel.style.padding=0;
 						cel = row.insertCell(-1);
 						cel.width = "250";
+						/* insert contact name */
 						cel.innerHTML =  "<table id='itable" + x + "'></table>"
 						itable = document.getElementById('itable'+x);
-						/* contact name */
-						for(value="",y=0;y < items.length;y++) {
-							if(items[y].getAttribute("ct") == "structuredname") {
-								value=items[y].getAttribute("v");
-								break;
-							}
-						}
 						irow = itable.insertRow(-1);
 						cel = irow.insertCell(-1);
 						var id = contacts[x].getAttribute("id");
-						cel.innerHTML = "<div style='cursor:pointer' onclick='getContact(" + id + ")'>" + value + "</div>" ;
-						/* contact name */
+						cel.innerHTML = "<div style='cursor:pointer' onclick='getContact(" + id + ")'>" + name + "</div>" ;
+						/* organization */
 						for(value="",y=0;y < items.length;y++) {
 							if(items[y].getAttribute("ct") == "organization") {
 								value=items[y].getAttribute("v");
@@ -78,7 +90,16 @@
 						cel = row.insertCell(-1);
 						cel.width = "250";
 						cel.innerHTML=value;
+						value = "";
+						for(var idx in names) {
+							if(names[idx]) {
+								value+="<a href=\"#" + idx + "\">" + idx + "</a> ";
+							}
+						}
     				}
+					if(value.length) {
+						document.getElementById("index").innerHTML=value;
+					}
   				}
 			}
 			xmlhttp.open("GET","/contacts/xml",true);
@@ -124,7 +145,8 @@
 	</head>
 <body bgcolor="lemonChiffon">
 
-<div id="container" style="margin-left:20px;font-family:courier new;font-size:11px">
+<div id="index"     style="text-align:center;position:absolute;left:20px;top:20px;font-family:courier new;font-size:13px;width:605px;height:30px;"></div>
+<div id="container" style="padding:5px;position:absolute;left:20px;top:60px;font-family:courier new;font-size:11px;width:605px;height:550px;overflow:auto;">
 </div>
 
 <div id="contactInfo" style="display: none;">
