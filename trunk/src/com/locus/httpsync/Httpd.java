@@ -35,7 +35,6 @@ import android.content.ContentUris;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
-import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
@@ -43,7 +42,6 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.Messenger;
-import android.provider.ContactsContract;
 import android.provider.ContactsContract.CommonDataKinds;
 import android.provider.ContactsContract.CommonDataKinds.BaseTypes;
 import android.provider.ContactsContract.CommonDataKinds.Email;
@@ -59,7 +57,6 @@ import android.provider.ContactsContract.CommonDataKinds.Relation;
 import android.provider.ContactsContract.CommonDataKinds.StructuredName;
 import android.provider.ContactsContract.CommonDataKinds.StructuredPostal;
 import android.provider.ContactsContract.CommonDataKinds.Website;
-import android.provider.ContactsContract.Contacts;
 import android.provider.ContactsContract.Data;
 import android.provider.ContactsContract.RawContacts;
 import android.provider.ContactsContract.RawContacts.Entity;
@@ -287,7 +284,7 @@ public class Httpd extends Service {
     							sendBuffer(out,getContactInfo(id,photoId,true));
         						
         					} else if(uri[0].equals("/contacts/xml")) {
-        						LinkedList<Integer> ll = new LinkedList(); 
+        						LinkedList<Integer> ll = new LinkedList<Integer>(); 
         						
         						sendBuffer(out,r200xml + endHeaders);
         						Cursor cursor = getContentResolver().query(Phone.CONTENT_URI, new String[] {Phone.RAW_CONTACT_ID,Phone.PHOTO_ID}, null, null, Phone.DISPLAY_NAME + " COLLATE NOCASE ASC;");
