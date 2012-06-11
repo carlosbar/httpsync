@@ -36,7 +36,6 @@ import android.os.Message;
 import android.os.Messenger;
 import android.os.PowerManager;
 import android.widget.TextView;
-import android.widget.Toast;
 
 public class HttpSyncActivity extends Activity {
 	private			PowerManager.WakeLock		wl;
